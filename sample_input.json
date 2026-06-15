@@ -1,0 +1,112 @@
+{
+  "briefing_date": "2026-06-15",
+  "metrics": [
+    {
+      "name": "JKM",
+      "category": "fuel",
+      "current": 12.8,
+      "previous": 12.1,
+      "week_ago": 11.4,
+      "unit": "USD/MMBtu",
+      "higher_means": "up",
+      "abnormal_daily_pct_threshold": 4.0,
+      "comment_hint": "LNG調達コスト上振れ要因。"
+    },
+    {
+      "name": "Brent",
+      "category": "fuel",
+      "current": 82.4,
+      "previous": 80.9,
+      "week_ago": 84.0,
+      "unit": "USD/bbl",
+      "higher_means": "up",
+      "abnormal_daily_pct_threshold": 2.0,
+      "comment_hint": "原油連動契約への波及は要確認。"
+    },
+    {
+      "name": "Coal",
+      "category": "fuel",
+      "current": 116.0,
+      "previous": 118.5,
+      "week_ago": 121.0,
+      "unit": "USD/t",
+      "higher_means": "up",
+      "abnormal_daily_pct_threshold": 2.5,
+      "comment_hint": "石炭火力の燃料費にはやや下押し。"
+    },
+    {
+      "name": "USD/JPY",
+      "category": "fx",
+      "current": 157.6,
+      "previous": 156.1,
+      "week_ago": 154.8,
+      "unit": "JPY",
+      "higher_means": "up",
+      "abnormal_daily_pct_threshold": 0.7,
+      "comment_hint": "円安なら燃料費上振れ。"
+    },
+    {
+      "name": "JEPX",
+      "category": "power",
+      "current": 14.6,
+      "previous": 12.2,
+      "week_ago": 11.9,
+      "unit": "JPY/kWh",
+      "higher_means": "up",
+      "abnormal_daily_pct_threshold": 8.0,
+      "comment_hint": "スポット市場の需給ひっ迫感が強い。"
+    }
+  ],
+  "weather": {
+    "region": "Tokyo",
+    "forecast_temp_c": 31.0,
+    "previous_forecast_temp_c": 29.0,
+    "normal_temp_c": 27.5,
+    "sensitivity_mode": "cooling",
+    "abnormal_delta_c_threshold": 1.5
+  },
+  "demand": {
+    "forecast_gw": 94.0,
+    "previous_forecast_gw": 90.0,
+    "week_ago_forecast_gw": 88.0,
+    "abnormal_daily_pct_threshold": 4.0
+  },
+  "plant_events": [
+    {
+      "plant_name": "Sample Thermal Unit 3",
+      "status": "stop",
+      "capacity_mw": 600,
+      "effective_date": "2026-06-15",
+      "confirmed": true,
+      "note": "定期点検延長"
+    },
+    {
+      "plant_name": "Sample LNG Unit 1",
+      "status": "restart",
+      "capacity_mw": 450,
+      "effective_date": "2026-06-15",
+      "confirmed": false,
+      "note": "再稼働見込み"
+    }
+  ],
+  "news_events": [
+    {
+      "headline": "中東情勢の緊張継続",
+      "category": "geopolitics",
+      "impact_direction": "up",
+      "confirmed": true
+    },
+    {
+      "headline": "制度改正の詳細待ち",
+      "category": "policy",
+      "impact_direction": "uncertain",
+      "confirmed": false
+    }
+  ],
+  "used_sources": [
+    "手動入力サンプル"
+  ],
+  "checked_but_unused_sources": [
+    "なし"
+  ]
+}
