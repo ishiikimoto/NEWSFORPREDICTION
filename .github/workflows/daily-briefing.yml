@@ -1,0 +1,85 @@
+name: Daily Briefing
+
+on:
+  schedule:
+    - cron: "5 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-briefing
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Restore history cache
+        id: restore-history
+        uses: actions/cache/restore@v4
+        with:
+          path: data/history.json
+          key: history-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            history-${{ github.ref_name }}-
+
+      - name: Prepare directories
+        shell: bash
+        run: |
+          mkdir -p data
+          mkdir -p reports/daily
+
+      - name: Generate briefing
+        shell: bash
+        run: |
+          DATE_JST="$(TZ=Asia/Tokyo date +%F)"
+          python main.py --input sample_free_config.json --output "reports/daily/${DATE_JST}.md"
+          cp "reports/daily/${DATE_JST}.md" reports/latest.md
+          {
+            echo "DATE_JST=${DATE_JST}"
+            echo "BRIEFING_PATH=reports/daily/${DATE_JST}.md"
+          } >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Upload briefing artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: briefing-${{ env.DATE_JST }}
+          path: |
+            ${{ env.BRIEFING_PATH }}
+            reports/latest.md
+          if-no-files-found: error
+
+      - name: Commit and push reports
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/daily reports/latest.md
+          if git diff --cached --quiet; then
+            echo "No report changes to commit."
+            exit 0
+          fi
+          git commit -m "Add daily briefing for ${DATE_JST}"
+          git push
+
+      - name: Save history cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/history.json
+          key: history-${{ github.ref_name }}-${{ github.run_id }}

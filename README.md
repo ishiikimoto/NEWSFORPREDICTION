@@ -104,3 +104,13 @@ python -m unittest discover -s tests -v
 - 初回実行では履歴不足のため、一部指標が「判断保留」になります
 - BOJ の USD/JPY は公式ページが PDF / 時系列検索中心のため、PoC では数値取得に失敗した場合は未確認扱いに落とします
 - 原油・LNG・石炭の数値価格は、この無料公式ソース構成では直接は取っていません。現状は資源エネルギー庁の制度・需給ニュースを代理情報として扱います
+
+## GitHub Actions
+
+`.github/workflows/daily-briefing.yml` で毎朝自動実行できます。
+
+- 実行時刻: 毎日 `07:05 JST` 相当
+- 出力保存先: `reports/daily/YYYY-MM-DD.md`
+- 最新版: `reports/latest.md`
+- 実行ごとの artifact: `briefing-YYYY-MM-DD`
+- 前日比・週次比較用の `data/history.json` は git には含めず、GitHub Actions cache に保存
