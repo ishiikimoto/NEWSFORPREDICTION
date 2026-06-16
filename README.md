@@ -29,6 +29,8 @@ python main.py --official-free-config sample_free_config.json
 python main.py --input sample_free_config.json
 ```
 
+`briefing_date` を省略した場合は、`Asia/Tokyo` の実行日が自動で使われます。
+
 Markdown をファイル保存したい場合:
 
 ```powershell

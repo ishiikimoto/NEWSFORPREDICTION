@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 from .history import HistoryStore
 from .models import BriefingInput, DemandInput, MetricInput, NewsEvent, WeatherInput
+from .timeutils import today_in_tokyo
 
 
 @dataclass(slots=True)
@@ -222,7 +223,9 @@ def build_official_free_input(config_path: str) -> BriefingInput:
 def _load_config(path: str) -> OfficialFreeConfig:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     return OfficialFreeConfig(
-        briefing_date=date.fromisoformat(payload["briefing_date"]),
+        briefing_date=date.fromisoformat(payload["briefing_date"])
+        if payload.get("briefing_date")
+        else today_in_tokyo(),
         region_name=payload["region_name"],
         jma_prefecture_code=payload["jma_prefecture_code"],
         jma_temp_area_name=payload["jma_temp_area_name"],

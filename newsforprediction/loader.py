@@ -4,6 +4,7 @@ import json
 from datetime import date
 
 from .models import BriefingInput, DemandInput, MetricInput, NewsEvent, PlantEvent, WeatherInput
+from .timeutils import today_in_tokyo
 
 
 def load_input_file(path: str) -> BriefingInput:
@@ -14,7 +15,9 @@ def load_input_file(path: str) -> BriefingInput:
 
 def load_input_payload(payload: dict) -> BriefingInput:
     return BriefingInput(
-        briefing_date=date.fromisoformat(payload["briefing_date"]),
+        briefing_date=date.fromisoformat(payload["briefing_date"])
+        if payload.get("briefing_date")
+        else today_in_tokyo(),
         metrics=[MetricInput(**item) for item in payload.get("metrics", [])],
         weather=WeatherInput(**payload["weather"]) if payload.get("weather") else None,
         demand=DemandInput(**payload["demand"]) if payload.get("demand") else None,

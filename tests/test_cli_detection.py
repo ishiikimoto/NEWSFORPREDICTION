@@ -15,7 +15,6 @@ class CliDetectionTests(unittest.TestCase):
             path.write_text(
                 json.dumps(
                     {
-                        "briefing_date": "2026-06-15",
                         "region_name": "Tokyo",
                         "jma_prefecture_code": "130000",
                         "jma_temp_area_name": "東京",

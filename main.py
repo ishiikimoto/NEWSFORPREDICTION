@@ -26,7 +26,6 @@ def parse_args() -> argparse.Namespace:
 def _looks_like_official_free_config(path: str) -> bool:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     required_keys = {
-        "briefing_date",
         "region_name",
         "jma_prefecture_code",
         "jma_temp_area_name",
