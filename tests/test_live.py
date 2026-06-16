@@ -10,8 +10,11 @@ from newsforprediction.live import (
     _classify_nra_headline,
     _classify_official_headline,
     _collect_tag_texts,
+    _extract_eia_brent_value,
     _filter_titles,
     _metric_from_history,
+    _midpoint_from_range,
+    _select_boj_pdf_url,
 )
 from newsforprediction.models import MetricInput
 
@@ -63,6 +66,45 @@ class LiveSourceTests(unittest.TestCase):
             _classify_nra_headline("中部電力本店での原子力規制検査"),
             ("supply", "up"),
         )
+
+    def test_select_boj_pdf_url_uses_latest_release_not_after_target(self) -> None:
+        page = """
+        <a href="/en/statistics/market/forex/fxdaily/fxlist/fx260616.pdf">June 16</a>
+        <a href="/en/statistics/market/forex/fxdaily/fxlist/fx260615.pdf">June 15</a>
+        <a href="/en/statistics/market/forex/fxdaily/fxlist/fx260612.pdf">June 12</a>
+        """
+
+        url = _select_boj_pdf_url(page, _date("2026-06-15"))
+
+        self.assertEqual(
+            url,
+            "https://www.boj.or.jp/en/statistics/market/forex/fxdaily/fxlist/fx260615.pdf",
+        )
+
+    def test_midpoint_from_range_parses_boj_quote(self) -> None:
+        self.assertEqual(_midpoint_from_range("160.22-24"), 160.23)
+
+    def test_extract_eia_brent_value_uses_latest_business_day(self) -> None:
+        html = """
+        <td class='B6'>&nbsp;&nbsp;2026 Jun- 1 to Jun- 5</td>
+        <td class='B3'>98.29</td>
+        <td class='B3'>98.49</td>
+        <td class='B3'>101.69</td>
+        <td class='B3'>98.98</td>
+        <td class='B3'>97.29</td>
+        </tr>
+        <tr>
+        <td class='B6'>&nbsp;&nbsp;2026 Jun- 8 to Jun-12</td>
+        <td class='B3'>97.46</td>
+        <td class='B3'></td>
+        <td class='B3'></td>
+        <td class='B3'></td>
+        <td class='B3'></td>
+        </tr>
+        """
+
+        self.assertEqual(_extract_eia_brent_value(html, _date("2026-06-08")), 97.46)
+        self.assertEqual(_extract_eia_brent_value(html, _date("2026-06-05")), 97.29)
 
 
 def _date(value: str):

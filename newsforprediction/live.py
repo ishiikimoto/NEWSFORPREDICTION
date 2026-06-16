@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import zlib
 from dataclasses import dataclass
 from datetime import date, datetime
 from html.parser import HTMLParser
@@ -24,6 +25,8 @@ class OfficialFreeConfig:
     occto_area_code: str
     occto_area_name: str
     history_path: str = "data/history.json"
+    include_crude_oil: bool = True
+    include_fx: bool = True
 
 
 @dataclass(slots=True)
@@ -82,12 +85,13 @@ def build_official_free_input(config_path: str) -> BriefingInput:
     metrics: list[MetricInput] = []
     news_events: list[NewsEvent] = []
     source_notes: list[str] = [
-        "原油・LNG・石炭の数値価格は今回の無料公式ソース構成では未取得。燃料は制度・需給ニュースの代理評価。",
+        "LNG・石炭の数値価格は今回の無料公式ソース構成では未取得。燃料は原油と制度・需給ニュースで補完評価。",
     ]
     used_sources: list[str] = []
     checked_but_unused_sources: list[str] = [
         "BOJ Foreign Exchange Rates (Daily): 公式ページ確認のみ。PoC では数値抽出未実装または失敗時は未採用。",
         "資源エネルギー庁: タイムアウトまたは該当見出しなしの場合は未採用。",
+        "EIA Spot Prices / Brent History: 価格抽出失敗時は未採用。",
     ]
 
     jepx = _safe_fetch(source_notes, "JEPX の取得に失敗。", _fetch_jepx_index, client)
@@ -166,33 +170,67 @@ def build_official_free_input(config_path: str) -> BriefingInput:
     else:
         weather = None
 
-    boj_metric = _safe_fetch(
-        source_notes,
-        "BOJ の USD/JPY は公式ページ確認までは実装済みだが、PoC では数値抽出失敗時に未確認扱い。",
-        _fetch_boj_usdjpy,
-        client,
-    )
-    if boj_metric is not None:
-        used_sources.append("BOJ Foreign Exchange Rates (Daily)")
-        metrics.append(
-            _metric_from_history(
-                history=history,
-                bucket="metrics",
-                target_date=config.briefing_date,
-                key="USD/JPY",
-                metric=MetricInput(
-                    name="USD/JPY",
-                    category="fx",
-                    current=boj_metric,
-                    unit="JPY",
-                    higher_means="up",
-                    abnormal_daily_pct_threshold=0.7,
-                    comment_hint="円安なら燃料費上振れ。",
-                ),
-            )
+    if config.include_crude_oil:
+        brent_metric = _safe_fetch(
+            source_notes,
+            "EIA Brent の価格抽出に失敗したため、原油価格は未確認。",
+            _fetch_eia_brent_spot,
+            client,
+            config.briefing_date,
         )
-    else:
-        pass
+        if brent_metric is not None:
+            used_sources.append("EIA Spot Prices / Brent History")
+            checked_but_unused_sources = [
+                item for item in checked_but_unused_sources if not item.startswith("EIA Spot Prices / Brent History:")
+            ]
+            metrics.append(
+                _metric_from_history(
+                    history=history,
+                    bucket="metrics",
+                    target_date=config.briefing_date,
+                    key="Brent",
+                    metric=MetricInput(
+                        name="Brent",
+                        category="fuel",
+                        current=brent_metric,
+                        unit="USD/bbl",
+                        higher_means="up",
+                        abnormal_daily_pct_threshold=3.0,
+                        comment_hint="原油連動コストへの波及要因。",
+                    ),
+                )
+            )
+
+    if config.include_fx:
+        boj_metric = _safe_fetch(
+            source_notes,
+            "BOJ の USD/JPY PDF から数値抽出できなかったため、為替は未確認。",
+            _fetch_boj_usdjpy,
+            client,
+            config.briefing_date,
+        )
+        if boj_metric is not None:
+            used_sources.append("BOJ Foreign Exchange Rates (Daily)")
+            checked_but_unused_sources = [
+                item for item in checked_but_unused_sources if not item.startswith("BOJ Foreign Exchange Rates (Daily):")
+            ]
+            metrics.append(
+                _metric_from_history(
+                    history=history,
+                    bucket="metrics",
+                    target_date=config.briefing_date,
+                    key="USD/JPY",
+                    metric=MetricInput(
+                        name="USD/JPY",
+                        category="fx",
+                        current=boj_metric,
+                        unit="JPY",
+                        higher_means="up",
+                        abnormal_daily_pct_threshold=0.7,
+                        comment_hint="円安なら燃料費上振れ。",
+                    ),
+                )
+            )
 
     enecho_news = _safe_fetch(source_notes, "資源エネルギー庁ニュースの取得に失敗。", _fetch_enecho_news, client) or []
     if enecho_news:
@@ -232,6 +270,8 @@ def _load_config(path: str) -> OfficialFreeConfig:
         occto_area_code=payload["occto_area_code"],
         occto_area_name=payload["occto_area_name"],
         history_path=payload.get("history_path", "data/history.json"),
+        include_crude_oil=payload.get("include_crude_oil", True),
+        include_fx=payload.get("include_fx", True),
     )
 
 
@@ -401,11 +441,136 @@ def _fetch_jma_weather(client: HttpClient, config: OfficialFreeConfig) -> dict[s
     }
 
 
-def _fetch_boj_usdjpy(client: HttpClient) -> float | None:
+def _fetch_boj_usdjpy(client: HttpClient, target_date: date) -> float | None:
     page = client.get_text("https://www.boj.or.jp/en/statistics/market/forex/fxdaily/index.htm")
-    if "fxlist/" not in page:
+    pdf_url = _select_boj_pdf_url(page, target_date)
+    if pdf_url is None:
         return None
+
+    texts = _extract_pdf_text_items(_get_bytes(client, pdf_url))
+    for index, item in enumerate(texts):
+        if item == "At 17:00 JST" and index + 1 < len(texts):
+            return _midpoint_from_range(texts[index + 1])
     return None
+
+
+def _fetch_eia_brent_spot(client: HttpClient, target_date: date) -> float | None:
+    html = client.get_text("https://www.eia.gov/dnav/pet/hist/RBRTED.htm")
+    return _extract_eia_brent_value(html, target_date)
+
+
+def _select_boj_pdf_url(page: str, target_date: date) -> str | None:
+    candidates: list[tuple[date, str]] = []
+    for href, compact_date in re.findall(r'href="([^"]*fx(\d{6})\.pdf)"', page, flags=re.IGNORECASE):
+        release_date = datetime.strptime(compact_date, "%y%m%d").date()
+        if release_date > target_date:
+            continue
+        url = href if href.startswith("http") else f"https://www.boj.or.jp{href}"
+        candidates.append((release_date, url))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _get_bytes(client: HttpClient, url: str, headers: dict[str, str] | None = None) -> bytes:
+    merged_headers = {"User-Agent": client.user_agent}
+    if headers:
+        merged_headers.update(headers)
+    request = Request(url, headers=merged_headers)
+    with urlopen(request, timeout=client.timeout_seconds) as response:
+        return response.read()
+
+
+def _extract_pdf_text_items(pdf_bytes: bytes) -> list[str]:
+    items: list[str] = []
+    for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf_bytes, re.S):
+        try:
+            decoded = zlib.decompress(match.group(1)).decode("latin1", errors="ignore")
+        except Exception:
+            continue
+        for text_match in re.finditer(r"(\[(?:.|\n)*?\]\s*TJ|\((?:\\.|[^\\)])*\)\s*Tj)", decoded):
+            text = _decode_pdf_text_token(text_match.group(1))
+            if text:
+                items.append(text)
+    return items
+
+
+def _decode_pdf_text_token(token: str) -> str:
+    pieces: list[str] = []
+    for part in re.findall(r"\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f]+>", token):
+        if part.startswith("("):
+            pieces.append(_decode_pdf_literal(part[1:-1]))
+        else:
+            pieces.append(" ")
+    return re.sub(r"\s+", " ", "".join(pieces)).strip()
+
+
+def _decode_pdf_literal(value: str) -> str:
+    chars: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] == "\\" and index + 1 < len(value):
+            chars.append(value[index + 1])
+            index += 2
+            continue
+        chars.append(value[index])
+        index += 1
+    return "".join(chars)
+
+
+def _midpoint_from_range(value: str) -> float | None:
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)-(\d+)", value)
+    if not match:
+        return None
+    left_text, right_tail = match.groups()
+    left = float(left_text)
+    if "." in left_text:
+        integer_part = left_text.split(".", 1)[0]
+        right = float(f"{integer_part}.{right_tail}")
+    else:
+        right = float(right_tail)
+    return round((left + right) / 2.0, 3)
+
+
+def _extract_eia_brent_value(html: str, target_date: date) -> float | None:
+    latest: tuple[date, float] | None = None
+    rows = re.findall(
+        r"<td class='B6'>&nbsp;&nbsp;(\d{4})\s+([A-Za-z]{3})-\s*(\d{1,2})\s+to\s+([A-Za-z]{3})-\s*(\d{1,2})</td>(.*?)</tr>",
+        html,
+        flags=re.S,
+    )
+    for year_text, start_month, start_day, _, _, cells in rows:
+        week_start = date(int(year_text), _month_to_number(start_month), int(start_day))
+        values = re.findall(r"<td class='B3'>([^<]*)</td>", cells)
+        for offset, raw_value in enumerate(values[:5]):
+            text = raw_value.strip()
+            if not text:
+                continue
+            observation_date = date.fromordinal(week_start.toordinal() + offset)
+            if observation_date > target_date:
+                continue
+            value = float(text)
+            if latest is None or observation_date > latest[0]:
+                latest = (observation_date, value)
+    return latest[1] if latest else None
+
+
+def _month_to_number(value: str) -> int:
+    months = {
+        "Jan": 1,
+        "Feb": 2,
+        "Mar": 3,
+        "Apr": 4,
+        "May": 5,
+        "Jun": 6,
+        "Jul": 7,
+        "Aug": 8,
+        "Sep": 9,
+        "Oct": 10,
+        "Nov": 11,
+        "Dec": 12,
+    }
+    return months[value]
 
 
 def _fetch_enecho_news(client: HttpClient) -> list[NewsEvent]:
